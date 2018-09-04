@@ -57,6 +57,10 @@ def warp_flow(img, flow):
     return res
 
 
+def avg_flow(flow):
+    return (np.mean(flow[..., 0]), np.mean(flow[..., 1]))
+
+
 if __name__ == '__main__':
     print(__doc__)
 
@@ -68,6 +72,9 @@ if __name__ == '__main__':
     show_glitch = False
     cur_glitch = prev.copy()
 
+    cols = np.int32(cam.get(3))   # float
+    rows = np.int32(cam.get(4))   # float
+
     while True:
         ret, img = cam.read()
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
@@ -75,7 +82,16 @@ if __name__ == '__main__':
                                            3, 15, 3, 5, 1.2, 0)
         prevgray = gray
 
-        cv.imshow('flow', draw_flow(gray, flow))
+        flow_x, flow_y = avg_flow(flow)
+        print(flow_x, flow_y)
+
+        # utilizamos o inverso do flow para "corrigí-lo"
+        M = np.array([[1, 0, -flow_x], [0, 1, -flow_y]],
+                     dtype=np.float32)
+        img_shifted = cv.warpAffine(gray, M, (cols, rows))
+
+        # cv.imshow('flow', draw_flow(gray, flow))
+        cv.imshow('corrigida', img_shifted[50:rows-50, 50:cols-50])
         if show_hsv:
             cv.imshow('flow HSV', draw_hsv(flow))
         if show_glitch:
