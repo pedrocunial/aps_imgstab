@@ -58,7 +58,10 @@ def warp_flow(img, flow):
 
 
 def avg_flow(flow):
-    return (np.mean(flow[..., 0]), np.mean(flow[..., 1]))
+    return (np.mean(flow[:, :, 0]), np.mean(flow[:, :, 1]))
+
+
+SQUARE_SIZE = 200
 
 
 if __name__ == '__main__':
@@ -66,32 +69,56 @@ if __name__ == '__main__':
 
     cam = cv.VideoCapture(0)
     cam.set(cv.CAP_PROP_BUFFERSIZE, 1)
+    cols = np.int32(cam.get(3))
+    rows = np.int32(cam.get(4))
+    print('resolucao:', cols, rows)
+    x_center = cols // 2
+    y_center = rows // 2
+
     ret, prev = cam.read()
+    full_img = prev
+    prev = prev[x_center-SQUARE_SIZE:x_center+SQUARE_SIZE,
+                y_center-SQUARE_SIZE:y_center+SQUARE_SIZE]
     prevgray = cv.cvtColor(prev, cv.COLOR_BGR2GRAY)
     show_hsv = False
     show_glitch = False
     cur_glitch = prev.copy()
 
-    cols = np.int32(cam.get(3))   # float
-    rows = np.int32(cam.get(4))   # float
+    flow = None
 
     while True:
         ret, img = cam.read()
-        gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-        flow = cv.calcOpticalFlowFarneback(prevgray, gray, None, 0.5,
-                                           3, 15, 3, 5, 1.2, 0)
+        gray_full = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        gray = gray_full[x_center-SQUARE_SIZE:x_center+SQUARE_SIZE,
+                         y_center-SQUARE_SIZE:y_center+SQUARE_SIZE]
+        if flow is None:
+            flow = cv.calcOpticalFlowFarneback(prevgray, gray, None, 0.5,
+                                               3, 15, 3, 5, 1.2, 0)
+        else:
+            flow += cv.calcOpticalFlowFarneback(prevgray, gray, None, 0.5,
+                                               3, 15, 3, 5, 1.2, 0)
+
+        print(flow.shape)
         prevgray = gray
 
         flow_x, flow_y = avg_flow(flow)
         print(flow_x, flow_y)
 
-        # utilizamos o inverso do flow para "corrigí-lo"
         M = np.array([[1, 0, -flow_x], [0, 1, -flow_y]],
                      dtype=np.float32)
-        img_shifted = cv.warpAffine(gray, M, (cols, rows))
+
+        img_shifted = cv.warpAffine(gray_full, M, (cols, rows))
+        img_shifted = cv.cvtColor(img_shifted, cv.COLOR_GRAY2RGB)
+        gray_rectangle = cv.rectangle(
+            img_shifted,
+            (x_center-SQUARE_SIZE, y_center-SQUARE_SIZE),
+            (x_center+SQUARE_SIZE, y_center+SQUARE_SIZE),
+            (0, 0, 255),
+            3
+        )
 
         # cv.imshow('flow', draw_flow(gray, flow))
-        cv.imshow('corrigida', img_shifted[50:rows-50, 50:cols-50])
+        cv.imshow('corrigida', cv.flip(gray_rectangle, 1))
         if show_hsv:
             cv.imshow('flow HSV', draw_hsv(flow))
         if show_glitch:
