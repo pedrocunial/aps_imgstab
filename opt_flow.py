@@ -61,7 +61,16 @@ def avg_flow(flow):
     return (np.mean(flow[:, :, 0]), np.mean(flow[:, :, 1]))
 
 
-SQUARE_SIZE = 200
+def crop_img(img, flow_x, flow_y, width, height):
+        ymin = int(0 if -flow_y < 0 else -flow_y)
+        ymax = int(height if height - flow_y > height else height - flow_y)
+        xmin = int(0 if -flow_x < 0 else -flow_x)
+        xmax = int(width if width - flow_x > width else width - flow_x)
+
+        return img[ymin:ymax, xmin:xmax]
+
+
+SQUARE_SIZE = 159
 
 
 if __name__ == '__main__':
@@ -69,8 +78,9 @@ if __name__ == '__main__':
 
     cam = cv.VideoCapture(0)
     cam.set(cv.CAP_PROP_BUFFERSIZE, 1)
-    cols = np.int32(cam.get(3))
-    rows = np.int32(cam.get(4))
+    cols = width = np.int32(cam.get(3))
+    rows = height = np.int32(cam.get(4))
+    screen_proportion = abs(cols / rows)
     print('resolucao:', cols, rows)
     x_center = cols // 2
     y_center = rows // 2
@@ -96,7 +106,7 @@ if __name__ == '__main__':
                                                3, 15, 3, 5, 1.2, 0)
         else:
             flow += cv.calcOpticalFlowFarneback(prevgray, gray, None, 0.5,
-                                               3, 15, 3, 5, 1.2, 0)
+                                                3, 15, 3, 5, 1.2, 0)
 
         print(flow.shape)
         prevgray = gray
@@ -104,11 +114,15 @@ if __name__ == '__main__':
         flow_x, flow_y = avg_flow(flow)
         print(flow_x, flow_y)
 
+        if abs(flow_x / flow_y) > screen_proportion:
+            flow_y = screen_proportion / flow_x
+        else:
+            flow_x = screen_proportion * flow_y
+
         M = np.array([[1, 0, -flow_x], [0, 1, -flow_y]],
                      dtype=np.float32)
 
-        img_shifted = cv.warpAffine(gray_full, M, (cols, rows))
-        img_shifted = cv.cvtColor(img_shifted, cv.COLOR_GRAY2RGB)
+        img_shifted = cv.cvtColor(gray_full, cv.COLOR_GRAY2RGB)
         gray_rectangle = cv.rectangle(
             img_shifted,
             (x_center-SQUARE_SIZE, y_center-SQUARE_SIZE),
@@ -117,8 +131,12 @@ if __name__ == '__main__':
             3
         )
 
-        # cv.imshow('flow', draw_flow(gray, flow))
-        cv.imshow('corrigida', cv.flip(gray_rectangle, 1))
+        gray_rectangle = cv.warpAffine(gray_rectangle, M, (cols, rows))
+
+        crop = crop_img(gray_rectangle, flow_x, flow_y, width, height)
+        crop = cv.resize(crop, (width, height))
+
+        cv.imshow('corrigida', cv.flip(crop, 1))
         if show_hsv:
             cv.imshow('flow HSV', draw_hsv(flow))
         if show_glitch:
